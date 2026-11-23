@@ -94,18 +94,24 @@ through shallow water (slower than walking).
 
 ## Performance notes
 
-The game is tuned to stay playable on integrated graphics (Intel Iris / UHD class):
+Stutter in a 3D game is almost always a **frame-time spike**, not a triangle count, so the
+renderer is tuned against spikes first:
 
-- No textures and no shadow maps per object — flat-shaded low-poly meshes only.
-- Trees and rocks are **instanced** (single draw call, capped at ~1750 trees).
-- Terrain is split into **40-unit chunks** with frustum culling, and heights come from an
-  analytic noise function instead of a heightmap image.
-- Shadows are refreshed at **~6 Hz** instead of every frame.
-- Renderer pixel ratio is capped at **1.25**, with ACES tone mapping.
-- Only two point lights (campfire, beacon) are active.
+- **Adaptive resolution.** `PerfGuard` samples the average frame time every 1.5 s and steps
+  the pixel ratio between **1.25 and 0.6**. A weak GPU (or a browser without hardware
+  acceleration) loses resolution instead of dropping frames.
+- **Shadows are refreshed lazily.** The shadow map is only re-rendered when the sun or the
+  player has actually moved enough to matter (at most a few times per second), never every
+  frame. Only tree canopies and buildings cast shadows — trunks, upper cones and rocks do not.
+- **Geometry and draw calls.** ~116k triangles in ~160 draw calls: trees, bushes and rocks are
+  instanced (one draw call each, ~1750 trees), terrain is 64 frustum-culled 40-unit chunks,
+  and all world height comes from an analytic noise function instead of a heightmap image.
+- **No textures**, no per-object shadow maps, flat-shaded Lambert materials only.
+- ACES tone mapping; only two point lights are active (campfire, beacon).
 
-If it still feels slow, make the browser window smaller or try another browser — the cost is
-mostly resolution-bound.
+If it still feels slow, make the browser window smaller (the cost is mostly resolution-bound),
+close other GPU-heavy tabs, and check that hardware acceleration is enabled
+(`chrome://gpu` should list your GPU as accelerated).
 
 ## Project structure
 
@@ -127,6 +133,7 @@ src/
   components/
     World.tsx              scene assembly
     WorldLogic.tsx         per-frame game logic (clock, quests, interactions)
+    PerfGuard.tsx          adaptive pixel-ratio watchdog
     Terrain.tsx            chunked terrain meshes
     Scenery.tsx            instanced trees, rocks, grass, clouds
     Village.tsx            houses, well, forge, campfire, lanterns
@@ -146,7 +153,11 @@ src/
 - **“Module not found” on start** — dependencies are missing or stale: run `npm install`.
 - **Black screen / WebGL error** — the browser or GPU block WebGL; enable hardware
   acceleration, or update the browser.
-- **Very low FPS** — see *Performance notes*; a smaller window makes the biggest difference.
+- **Choppy or stuttering** — most often software rendering. This game needs a hardware GPU;
+  running it inside a remote/VM preview (or with hardware acceleration disabled) gives a few
+  frames per second no matter what. Run `npm run dev` locally and check `chrome://gpu`.
+- **Very low FPS** — see *Performance notes*; the game lowers its own resolution, and a
+  smaller window makes the biggest difference.
 - **`Port 3000 is already in use`** — another dev server is running; stop it, or edit
   `server.port` in `vite.config.ts`.
 - **No sound** — the game has no audio; that is intentional.
