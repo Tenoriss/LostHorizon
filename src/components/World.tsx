@@ -7,12 +7,14 @@ import Npcs from './Npcs'
 import Player from './Player'
 import QuestObjects from './QuestObjects'
 import WorldLogic from './WorldLogic'
+import PerfGuard from './PerfGuard'
 
 export default function World() {
   return (
     <>
       <Atmosphere />
       <WorldLogic />
+      <PerfGuard />
       <Terrain />
       <Water />
       <Scenery />

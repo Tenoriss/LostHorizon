@@ -83,7 +83,6 @@ export default function Scenery() {
       <instancedMesh
         ref={pineTrunkRef}
         args={[geo.pineTrunk, materials.trunk, pines.length]}
-        castShadow
         frustumCulled={false}
       />
       <instancedMesh
@@ -95,13 +94,11 @@ export default function Scenery() {
       <instancedMesh
         ref={pineHighRef}
         args={[geo.pineHigh, materials.pine, pines.length]}
-        castShadow
         frustumCulled={false}
       />
       <instancedMesh
         ref={oakTrunkRef}
         args={[geo.oakTrunk, materials.trunk, oaks.length]}
-        castShadow
         frustumCulled={false}
       />
       <instancedMesh
@@ -113,7 +110,6 @@ export default function Scenery() {
       <instancedMesh
         ref={oakCrown2Ref}
         args={[geo.oakCrown2, materials.oak, oaks.length]}
-        castShadow
         frustumCulled={false}
       />
       <instancedMesh
@@ -124,7 +120,6 @@ export default function Scenery() {
       <instancedMesh
         ref={rockRef}
         args={[geo.rock, materials.rock, rocks.length]}
-        castShadow
         frustumCulled={false}
       />
     </group>

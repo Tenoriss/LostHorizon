@@ -40,6 +40,7 @@ export default function Atmosphere() {
   const moonDisc = useRef<THREE.Mesh>(null!)
   const timeAcc = useRef(0)
   const shadowAcc = useRef(0)
+  const lastShadowPos = useRef(new THREE.Vector3(1e9, 1e9, 1e9))
   const [starsVisible, setStarsVisible] = useState(false)
 
   const fog = useMemo(() => new THREE.Fog('#b6d3df', 80, 360), [])
@@ -81,10 +82,16 @@ export default function Atmosphere() {
       sunRef.current.target.position.copy(lightTarget)
       sunRef.current.target.updateMatrixWorld()
 
-      // static scenery dominates the shadow pass: refresh it ~6x a second
+      // Re-rendering the shadow map means drawing every caster again, so it is a
+      // per-update spike. Keep it near-static: only refresh when the light actually
+      // moved far enough to matter, and never more than a few times a second.
       shadowAcc.current += delta
-      if (shadowAcc.current > 0.16) {
+      if (
+        shadowAcc.current > 0.35 &&
+        (shadowAcc.current > 1.2 || lastShadowPos.current.distanceToSquared(lightPos) > 4)
+      ) {
         shadowAcc.current = 0
+        lastShadowPos.current.copy(lightPos)
         sunRef.current.shadow.needsUpdate = true
       }
     }
