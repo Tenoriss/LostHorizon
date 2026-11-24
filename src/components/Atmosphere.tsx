@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { clockState, playerState } from '../game/state'
 import { smoothstep } from '../game/terrain'
 import { useGame } from '../game/store'
+import { QUALITY, useSettings } from '../game/quality'
 
 const skyNight = new THREE.Color('#0a1120')
 const skyDusk = new THREE.Color('#e6a070')
@@ -33,6 +34,8 @@ function formatTime(hours: number) {
 
 export default function Atmosphere() {
   const { scene } = useThree()
+  const quality = useSettings((s) => s.quality)
+  const preset = QUALITY[quality]
   const sunRef = useRef<THREE.DirectionalLight>(null!)
   const hemiRef = useRef<THREE.HemisphereLight>(null!)
   const ambientRef = useRef<THREE.AmbientLight>(null!)
@@ -44,6 +47,23 @@ export default function Atmosphere() {
   const [starsVisible, setStarsVisible] = useState(false)
 
   const fog = useMemo(() => new THREE.Fog('#b6d3df', 80, 360), [])
+
+  // "View distance" is the horizon: fog hides everything past it and Terrain
+  // stops drawing chunks there, so lowering it saves real fragments.
+  useEffect(() => {
+    fog.far = preset.viewDistance
+    fog.near = Math.max(40, preset.viewDistance * 0.26)
+  }, [fog, preset])
+
+  // Changing shadow map size or turning the shadow map off needs the cached
+  // render target to be dropped, otherwise three keeps the old resolution.
+  useEffect(() => {
+    const sun = sunRef.current
+    if (!sun) return
+    sun.shadow.map?.dispose()
+    sun.shadow.map = null
+    sun.shadow.needsUpdate = true
+  }, [preset])
 
   useEffect(() => {
     scene.background = skyColor
@@ -85,10 +105,13 @@ export default function Atmosphere() {
       // Re-rendering the shadow map means drawing every caster again, so it is a
       // per-update spike. Keep it near-static: only refresh when the light actually
       // moved far enough to matter, and never more than a few times a second.
+      // Every refresh redraws all shadow casters into the map, which is a visible
+      // hitch on weak GPUs. Half as often as before, and the light has to have
+      // drifted a bit further before it is worth re-drawing.
       shadowAcc.current += delta
       if (
-        shadowAcc.current > 0.35 &&
-        (shadowAcc.current > 1.2 || lastShadowPos.current.distanceToSquared(lightPos) > 4)
+        shadowAcc.current > 0.5 &&
+        (shadowAcc.current > 1.8 || lastShadowPos.current.distanceToSquared(lightPos) > 12)
       ) {
         shadowAcc.current = 0
         lastShadowPos.current.copy(lightPos)
@@ -133,11 +156,11 @@ export default function Atmosphere() {
     <>
       <directionalLight
         ref={sunRef}
-        castShadow
+        castShadow={preset.shadows}
         intensity={2.4}
         position={[60, 90, 40]}
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        shadow-mapSize-width={preset.shadowMapSize}
+        shadow-mapSize-height={preset.shadowMapSize}
         shadow-camera-left={-48}
         shadow-camera-right={48}
         shadow-camera-top={48}

@@ -6,7 +6,11 @@ import { clockState } from '../game/state'
 
 export default function Water() {
   const waterRef = useRef<THREE.Mesh>(null!)
-  const materialRef = useRef<THREE.MeshStandardMaterial>(null!)
+  // Lambert instead of Standard: the water covers a large part of the screen and
+  // a PBR shader there is one of the most expensive per-pixel costs on integrated
+  // GPUs. It also does not receive shadows any more (another texture fetch on
+  // every water pixel) — nobody can see a shadow on the lake anyway.
+  const materialRef = useRef<THREE.MeshLambertMaterial>(null!)
 
   useFrame((state) => {
     const t = state.clock.elapsedTime
@@ -30,17 +34,9 @@ export default function Water() {
       ref={waterRef}
       rotation={[-Math.PI / 2, 0, 0]}
       position={[0, WATER_LEVEL, 0]}
-      receiveShadow
     >
       <planeGeometry args={[WORLD_HALF * 2, WORLD_HALF * 2, 1, 1]} />
-      <meshStandardMaterial
-        ref={materialRef}
-        color="#2f6d82"
-        transparent
-        opacity={0.86}
-        roughness={0.18}
-        metalness={0.35}
-      />
+      <meshLambertMaterial ref={materialRef} color="#2f6d82" transparent opacity={0.88} />
     </mesh>
   )
 }

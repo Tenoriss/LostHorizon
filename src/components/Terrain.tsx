@@ -1,5 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { playerState } from '../game/state'
+import { QUALITY, useSettings } from '../game/quality'
 import {
   CHUNK,
   CHUNKS_PER_SIDE,
@@ -53,6 +56,8 @@ function faceColor(h: number, steep: number, x: number, z: number, out: THREE.Co
 interface ChunkGeom {
   key: string
   geometry: THREE.BufferGeometry
+  cx: number
+  cz: number
 }
 
 function buildChunk(ci: number, cj: number): ChunkGeom {
@@ -133,10 +138,15 @@ function buildChunk(ci: number, cj: number): ChunkGeom {
   geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
 
-  return { key: `${ci}-${cj}`, geometry }
+  return { key: `${ci}-${cj}`, geometry, cx: ox + CHUNK / 2, cz: oz + CHUNK / 2 }
 }
 
 export default function Terrain() {
+  const preset = QUALITY[useSettings((s) => s.quality)]
+  const viewDistance = preset.viewDistance
+  const chunkRefs = useRef<(THREE.Mesh | null)[]>([])
+  const cullAcc = useRef(0)
+
   const chunks = useMemo(() => {
     const out: ChunkGeom[] = []
     for (let ci = 0; ci < CHUNKS_PER_SIDE; ci++) {
@@ -156,14 +166,36 @@ export default function Terrain() {
     [],
   )
 
+  // Beyond the fog horizon nothing is visible, but fully fogged chunks still
+  // cost fragments. Hide them, a few times a second instead of every frame.
+  useFrame((_, delta) => {
+    cullAcc.current += delta
+    if (cullAcc.current < 0.3) return
+    cullAcc.current = 0
+    const p = playerState.position
+    const reach = viewDistance + CHUNK
+    const reach2 = reach * reach
+    for (let i = 0; i < chunks.length; i++) {
+      const mesh = chunkRefs.current[i]
+      if (!mesh) continue
+      const c = chunks[i]
+      const dx = p.x - c.cx
+      const dz = p.z - c.cz
+      mesh.visible = dx * dx + dz * dz < reach2
+    }
+  })
+
   return (
     <group>
-      {chunks.map((c) => (
+      {chunks.map((c, i) => (
         <mesh
           key={c.key}
+          ref={(m) => {
+            chunkRefs.current[i] = m
+          }}
           geometry={c.geometry}
           material={material}
-          receiveShadow
+          receiveShadow={preset.shadows}
           frustumCulled
         />
       ))}
