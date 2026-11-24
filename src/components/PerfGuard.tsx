@@ -1,11 +1,15 @@
 import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
+import { QUALITY, useSettings } from '../game/quality'
 
 /**
  * Adaptive resolution. Weak GPUs (and browsers that fall back to software WebGL)
  * are almost always fill-rate bound, so the cheapest large win is drawing fewer
  * pixels. We sample the average frame time and step the pixel ratio down when we
  * cannot hold ~48 fps, then step it back up while the frame rate sits at ~60 fps.
+ *
+ * The pixel-ratio ladder comes from the selected quality preset, so "High" can
+ * reach 1.25x while "Low" stays at 0.65x even on a machine with spare headroom.
  *
  * Rules that keep it from misbehaving:
  * - the first seconds are ignored entirely: shader compilation, texture upload
@@ -14,45 +18,43 @@ import { useFrame, useThree } from '@react-three/fiber'
  * - no sampling while cooling down after a change, so a window always measures
  *   a steady state instead of the hitch caused by the previous resize;
  * - lowering a step takes one bad window, raising it needs several good ones in
- *   a row, and the raise threshold (17 ms ~ 59 fps) is well above the lower
- *   threshold (21 ms ~ 48 fps) so the resolution cannot ping-pong;
- * - the starting level is read from the real pixel ratio on mount, because the
- *   Canvas dpr range is clamped to the display's devicePixelRatio.
+ *   a row, and the raise threshold (17.5 ms ~ 57 fps) is well above the lower
+ *   threshold (23.5 ms ~ 42 fps) so the resolution cannot ping-pong.
  */
-const STEPS = [0.6, 0.8, 1, 1.25]
-
-const WARMUP = 4 // seconds ignored after mount
-const WINDOW = 1.5 // seconds per sample window
-const DOWN_MS = 0.021 // slower than ~48 fps -> lower the resolution
-const UP_MS = 0.017 // ~59 fps or better -> there is room to raise it
-const UP_WINDOWS = 2 // consecutive good windows before raising a step
-const DOWN_COOLDOWN = 5 // seconds to wait after lowering
-const UP_COOLDOWN = 2.5 // seconds to wait after raising
+const WARMUP = 2.5 // seconds ignored after mount
+const WINDOW = 1.25 // seconds per sample window
+const DOWN_MS = 0.0235 // slower than ~42 fps -> lower the resolution
+const PANIC_MS = 0.042 // slower than ~24 fps -> drop two steps at once
+const UP_MS = 0.0175 // ~57 fps or better -> there is room to raise it
+const UP_WINDOWS = 3 // consecutive good windows before raising a step
+const DOWN_COOLDOWN = 3.5 // seconds to wait after lowering
+const UP_COOLDOWN = 3 // seconds to wait after raising
 
 export default function PerfGuard() {
+  const quality = useSettings((s) => s.quality)
+  const steps = QUALITY[quality].dprSteps
   const setDpr = useThree((s) => s.setDpr)
   const gl = useThree((s) => s.gl)
-  const level = useRef(STEPS.length - 1)
+  const level = useRef(steps.length - 1)
   const warmup = useRef(WARMUP)
   const elapsed = useRef(0)
   const frames = useRef(0)
   const cooldown = useRef(0)
   const goodWindows = useRef(0)
 
-  // Match the bookkeeping to the resolution the renderer actually started with.
+  // Start in the middle of the ladder instead of at the cap: the first seconds are
+  // the worst place to be over budget, and the guard climbs back up quickly when
+  // the machine has headroom.
   useEffect(() => {
-    const actual = gl.getPixelRatio()
-    let best = 0
-    for (let i = 1; i < STEPS.length; i++) {
-      if (Math.abs(STEPS[i] - actual) < Math.abs(STEPS[best] - actual)) best = i
-    }
+    const best = Math.min(1, steps.length - 1)
     level.current = best
     warmup.current = WARMUP
     elapsed.current = 0
     frames.current = 0
     cooldown.current = 0
     goodWindows.current = 0
-  }, [gl])
+    setDpr(steps[best])
+  }, [gl, steps, setDpr])
 
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.5)
@@ -85,20 +87,23 @@ export default function PerfGuard() {
     if (avg > DOWN_MS) {
       goodWindows.current = 0
       if (level.current > 0) {
-        level.current -= 1
+        // A frame time this bad means one step is rarely enough; take two so the
+        // climb back does not cost the player another slow second.
+        const drop = avg > PANIC_MS ? 2 : 1
+        level.current = Math.max(0, level.current - drop)
         cooldown.current = DOWN_COOLDOWN
-        setDpr(STEPS[level.current])
+        setDpr(steps[level.current])
       }
       return
     }
 
-    if (avg < UP_MS && level.current < STEPS.length - 1) {
+    if (avg < UP_MS && level.current < steps.length - 1) {
       goodWindows.current += 1
       if (goodWindows.current >= UP_WINDOWS) {
         level.current += 1
         goodWindows.current = 0
         cooldown.current = UP_COOLDOWN
-        setDpr(STEPS[level.current])
+        setDpr(steps[level.current])
       }
       return
     }
