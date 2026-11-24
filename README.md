@@ -40,6 +40,10 @@ Because it binds to `0.0.0.0`, you can also open the “Network” URL Vite prin
 phone or another machine on the same Wi-Fi. If port 3000 is taken, stop whatever is using it
 (the config uses `strictPort`) or change `server.port` in `vite.config.ts`.
 
+If you open the dev server through another hostname (a tunnel, a cloud preview), add it to
+`VITE_ALLOWED_HOSTS` as a comma-separated list, e.g.
+`VITE_ALLOWED_HOSTS=abc.example.dev npm run dev`.
+
 ## Production build
 
 ```bash
@@ -69,6 +73,7 @@ npm run typecheck   # tsc --noEmit only
 | Mouse wheel | Zoom the camera in / out |
 | `E` | Talk to a nearby villager · advance dialogue |
 | `Esc` | Pause / resume · close dialogue |
+| Quality button (top right) | Low / Medium / High graphics preset |
 
 The camera pulls itself in automatically when terrain would block your view, and you can wade
 through shallow water (slower than walking).
@@ -89,27 +94,48 @@ through shallow water (slower than walking).
   three lost shards hidden around the valley, and reach the beacon on the far ridge.
 - **Minimap** drawn from the real heightfield, with roads, houses, quest markers, shard
   markers, the beacon and a rotating player arrow.
-- **HUD** — journal with objectives and progress, clock, contextual `E` prompt, toasts,
-  dialogue box and pause menu.
+- **HUD** — journal with objectives and progress, clock, live FPS readout, contextual `E`
+  prompt, toasts, dialogue box and pause menu.
+- **Quality menu** — Low / Medium / High in the top-right panel, remembered per browser.
 
 ## Performance notes
 
 The game is tuned to stay playable on integrated graphics (Intel Iris / UHD class):
 
-- No textures and no shadow maps per object — flat-shaded low-poly meshes only.
-- Trees and rocks are **instanced** (single draw call, capped at ~1750 trees).
+- No textures and no per-object shadow maps — flat-shaded low-poly meshes only.
+- Trees, bushes and rocks are **instanced** and bucketed into **80-unit forest cells**, so the
+  cells outside the camera frustum or past the view distance are not submitted at all.
 - Terrain is split into **40-unit chunks** with frustum culling, and heights come from an
   analytic noise function instead of a heightmap image.
-- Shadows are refreshed lazily — at most ~3×/s, and only when the sun or the player has
-  actually moved.
+- Shadows use **PCF** (not PCF-soft) and are refreshed lazily — at most once per ~1.8 s, and
+  only when the sun or the player has actually moved.
 - **MSAA is off** (measured ~25% cheaper per frame than antialiasing here) and the pixel
-  ratio is capped at **1.25**, with ACES tone mapping.
-- `PerfGuard` adapts the render resolution between **0.6×** and **1.25×**: it ignores the
-  first ~4 s (shader compile spikes), steps down when the average frame time goes above
-  ~21 ms, and steps back up once it holds ~59 fps (below ~17 ms).
+  ratio is capped by the quality preset, with ACES tone mapping.
+- `PerfGuard` adapts the render resolution inside the preset's ladder: it ignores the first
+  ~2.5 s (shader compile spikes), starts mid-ladder, drops a step above ~24 ms average frame
+  time, drops two steps at once below ~24 fps, and only climbs back after three good windows.
+- Water is flat-shaded Lambert that does not receive shadows, and terrain shadow-receiving is
+  disabled when the preset turns shadows off.
 - Only two point lights (campfire, beacon) are active.
 
-If it still feels slow, make the browser window smaller or try another browser — the cost is
+### Quality presets
+
+The panel under the clock shows the live **FPS** counter and the quality picker. The choice
+is stored in `localStorage`, so it survives a reload:
+
+| Preset | Pixel ratio | Shadows | View distance |
+| --- | --- | --- | --- |
+| Low | 0.4× – 0.65× | off | 130 units |
+| Medium (default) | 0.6× – 0.9× | 1024 map | 240 units |
+| High | 0.8× – 1.25× | 2048 map | 400 units |
+
+Pixel ratio is adaptive inside the preset range (`PerfGuard`). It starts in the middle of
+the ladder, drops a step when the average frame time passes ~24 ms, drops two steps at
+once below ~24 fps, and only climbs back after three good windows in a row. View distance
+is both the fog horizon and the culling radius for terrain chunks and forest cells:
+anything past it is not drawn at all.
+
+If it still feels slow, pick **Low** first, then make the browser window smaller — the cost is
 mostly resolution-bound.
 
 ## Project structure
@@ -129,19 +155,22 @@ src/
     store.ts               zustand store (quests, dialogue, toasts, pause)
     quests.ts              quest definitions and progression rules
     npcs.ts                NPC metadata and dialogue scripts
+    quality.ts             Low/Medium/High presets + persisted settings store
   components/
     World.tsx              scene assembly
     WorldLogic.tsx         per-frame game logic (clock, quests, interactions)
     Terrain.tsx            chunked terrain meshes
-    Scenery.tsx            instanced trees, rocks, grass, clouds
+    Scenery.tsx            instanced trees, rocks, bushes in cullable cells
     Village.tsx            houses, well, forge, campfire, lanterns
     Water.tsx              river surface
-    Atmosphere.tsx         sky dome, sun/moon, fog, lighting
+    Atmosphere.tsx         sky, sun/moon, fog, lighting, shadow cadence
+    PerfGuard.tsx          adaptive pixel ratio inside the quality preset
     QuestObjects.tsx       shards and the beacon
     Npcs.tsx               NPC models and idle animation
     Player.tsx             movement, camera, interaction detection
   ui/
     HUD.tsx                journal, clock, dialogue, prompts, pause menu
+    PerfPanel.tsx          FPS counter and quality menu
     Minimap.tsx            canvas minimap
     StartScreen.tsx        title screen
 ```
@@ -151,7 +180,8 @@ src/
 - **“Module not found” on start** — dependencies are missing or stale: run `npm install`.
 - **Black screen / WebGL error** — the browser or GPU block WebGL; enable hardware
   acceleration, or update the browser.
-- **Very low FPS** — see *Performance notes*; a smaller window makes the biggest difference.
+- **Very low FPS** — pick the **Low** preset in the top-right panel; see *Performance notes*.
+  A smaller window makes the biggest difference.
 - **`Port 3000 is already in use`** — another dev server is running; stop it, or edit
   `server.port` in `vite.config.ts`.
 - **No sound** — the game has no audio; that is intentional.

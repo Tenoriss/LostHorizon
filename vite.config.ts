@@ -1,14 +1,22 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// Extra hostnames the dev server accepts, as a comma-separated env var. This keeps
+// per-session cloud preview hostnames out of the committed config; plain local
+// development is always allowed through localhost.
+const extraHosts =
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+    ?.VITE_ALLOWED_HOSTS?.split(',')
+    .map((host) => host.trim())
+    .filter(Boolean) ?? []
+
 export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
     port: 3000,
     strictPort: true,
-    // the cloud preview proxy reaches the dev server through this hostname
-    allowedHosts: ['pv-06e29ea1a61d-6fe8a475-039b-48eb-8507-5b125b6db2dd.style.dev'],
+    allowedHosts: extraHosts,
   },
   build: {
     target: 'es2020',

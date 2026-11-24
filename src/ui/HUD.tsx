@@ -1,4 +1,5 @@
 import Minimap from './Minimap'
+import PerfPanel from './PerfPanel'
 import { QUESTS, QUEST_LIST } from '../game/quests'
 import { useGame } from '../game/store'
 
@@ -85,6 +86,7 @@ export default function HUD() {
       </div>
 
       <Minimap />
+      <PerfPanel />
 
       {hint && !dialogue && !paused && (
         <div className="interact-prompt">
